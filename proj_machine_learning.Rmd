@@ -1,0 +1,133 @@
+---
+title: "Machine Learning Project"
+
+author: "Igor Tomashevskiy"
+
+output:
+  html_document:
+    keep_md: yes
+    
+---
+
+
+
+**Executive Summary:**  Using devices such as Fitbit it is possible to collect a large amount of data about personal activity. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The data used in this project was collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+Six participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+The goal of this Machine Learning project is to predict the manner in which they did the exercise.  
+The data for the project come from this source: *http://groupware.les.inf.puc-rio.br/har.
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.*  
+A group of models were tested. The top model (Random Forest, Accuracy = 0.99) was applied to the test set.  
+Test set results:  B A B A A E D B A A B C B A E E A B B B
+
+**Data pre-processing**: After downloading the training and the test data, let's perform some  basic initial data analysis.
+```{r eval=FALSE}
+pml_training<-read.csv("pml-training.csv",na.strings=c("NA",""))
+pml_testing<-read.csv("pml-testing.csv",na.strings=c("NA",""))
+```
+Training data is a data frame with 19622 observation of 160 variables.
+Testing data is a data frame  with 20 observation of 160 variables. The first 7 variables are ID's and timestamps variables. Because these variables have no prediction value, we will drop them.
+```{r eval=FALSE}
+pml.training.transf<-pml_training[,-(1:7)]
+pml.testing.transf<-pml_testing[,-(1:7)]
+```
+The dataset contains multiple variables with missing data. We can calculate the amount of missing values:
+```{r eval=FALSE}
+na.count<-apply(pml.training.transf,2,function(x){sum(is.na(x))})
+```
+The percentage of missing values ~ 99%. Also the amount of missing values is concentrated in a subset of predictors rather than occuring randomly across all the predictors. The percentage of missing data is substantial enough to remove these predictors from subsequent modeling activities.
+```{r eval=FALSE}
+na.col.names<-names(na.count[na.count>10000])
+pml.training.transf2<-pml.training.transf[,!names(pml.training.transf)%in%na.col.names,drop=F]
+testing<-pml.testing.transf[,!names(pml.testing.transf)%in%na.col.names,drop=F]
+```
+Now we consider the case of zero variance predictors. To filter for near-zero variance predictors the function *nearZeroVar* can be used, it will return the column numbers of any predictors that fulfill the condition. For our data , there are no problematic predictors:
+```{r eval=FALSE}
+library(caret)
+nearZeroVar(pml.training.transf2)
+```
+        integer(0)  
+We will use only 53 predictors in the analysis.  
+The resulting dataset is randomly divided into a training sample and a validation sample.
+```{r eval=FALSE}
+set.seed(1234)
+inTrain = createDataPartition(pml.training.transf2$classe, p = 3/4)[[1]]
+training = pml.training.transf2[ inTrain,]
+validating = pml.training.transf2[-inTrain,]
+```
+**Model Selection:**The training sample will be used to create classification schemes using Support Vector Machine, Boosted Trees and Random Forest.
+The validation sample will be used to evaluate the effectiveness of these schemes and to select the final model for prediction.
+We selected these models since all of them offer competitive predictive performance.
+The following code creates the model objects for SVM, Boosting and Random Forest:
+```{r eval=FALSE}
+
+set.seed(12345)
+controlObject<-trainControl(method="repeatedcv",repeats=5,number=10)
+svm<-train(classe~.,method="svmRadial",data=training,preProc=c("center","scale"),trControl=controlObject)
+svm.predict<-predict(svm,validating)
+confusionMatrix(svm.predict,validating$classe)
+```
+```{r eval=FALSE}
+set.seed(12345)
+gbm<-train(classe~.,method="gbm",data=training,verbose=FALSE,trControl=controlObject)
+gbm.predict<-predict(gbm,validating)
+confusionMatrix(gbm.predict,validating$classe)
+```
+```{r eval=FALSE}
+set.seed(12345)
+random.forest<-train(classe~.,method="rf",data=training)
+forest.predict<-predict(random.forest,validating)
+confusionMatrix(forest.predict,validating$classe)
+```
+Each of this classifiers performed well on each of the accuracy measures:svm = 0,928, gbm = 0.957 and rf = 0.9925
+In this instance we select the random forest model as the winner:
+
+Confusion Matrix and Statistics  
+          
+          
+   Prediction    A     B     C     D     E:   
+
+         A 1395    5    0    0    0     
+         B    0  942   13    0    0       
+         C    0    2  841   15    0        
+         D    0    0    1  789    1      
+         E    0    0    0    0  900        
+
+Overall Statistics
+                          
+               Accuracy : 0.9925          
+                 95% CI : (0.9896, 0.9947)
+    No Information Rate : 0.2845          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.9905          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+                     Class: A Class: B Class: C Class: D Class: E 
+                    
+    Sensitivity             1.0000       0.9926     0.9836     0.9813     0.9989    
+    Specificity             0.9986       0.9967     0.9958     0.9995     1.0000    
+    Pos Pred Value          0.9964       0.9864     0.9802     0.9975     1.0000    
+    Neg Pred Value          1.0000       0.9982     0.9965     0.9964     0.9998    
+    Prevalence              0.2845       0.1935     0.1743     0.1639     0.1837    
+    Detection Rate          0.2845       0.1921     0.1715     0.1609     0.1835  
+    Detection Prevalence    0.2855       0.1947     0.1750     0.1613     0.1835  
+    Balanced Accuracy       0.9993       0.9947     0.9897     0.9904     0.9994  
+
+```{r eval=FALSE}
+confusionMatrix(forest.predict,validating$classe)$overall[1]
+```
+        Accuracy   
+        0.9924551   
+Out of sample 0.0075  
+The last step would be to apply the model to the testing data set:
+```{r eval=FALSE}
+test_result<-predict(random.forest,testing)
+test_result
+```
+ [1] B A B A A E D B A A B C B A E E A B B B
+ 
+Levels: A B C D E
+
+
+
